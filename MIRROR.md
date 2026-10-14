@@ -19,6 +19,11 @@ Upstream remote is already configured as `upstream` (tianocore/edk2, tracking
 `stable/202508` only). This mirror is read-only by policy — all AcreetionOS
 patches land behind us, or upstream first.
 
+The currently-synced LTS is recorded in `.github/.upstream-lts`. A scheduled
+GitHub Action (`.github/workflows/release-reminder.yml`) emails
+alerts@acreetionos.org whenever tianocore publishes a newer `stable/*` branch —
+update this file when you pull a new LTS in, or the bot will keep pinging.
+
 ## Building OVMF
 
 See upstream `ReadMe.md` or `Build` instructions under `OvmfPkg/`.

@@ -1,0 +1,83 @@
+name: LTS release reminder
+
+on:
+  schedule:
+    # 13:00 UTC ≈ 06:00 Yakima (PDT). After DST ends (Nov 1) this lands at 07:00.
+    - cron: '0 13 * * 2'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check-lts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect new EDK II long-term stable branch
+        id: lts
+        run: |
+          set -euo pipefail
+          tracked="$(cat .github/.upstream-lts)"
+          upstream_url="https://github.com/tianocore/edk2.git"
+
+          latest="$(git ls-remote --heads "$upstream_url" 'refs/heads/stable/*' \
+              | awk '{print $2}' \
+              | sed 's|^refs/heads/||' \
+              | sort -V | tail -n1)"
+          tip="$(git ls-remote --heads "$upstream_url" "refs/heads/$latest" | awk '{print $1}')"
+
+          echo "tracked=$tracked" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest"   >> "$GITHUB_OUTPUT"
+          echo "tip=$tip"         >> "$GITHUB_OUTPUT"
+
+          if [ "$(printf '%s\n' "$tracked" "$latest" | sort -V | tail -n1)" != "$tracked" ]; then
+            echo "new=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Email the reminder
+        if: steps.lts.outputs.new == 'true'
+        env:
+          SMTP_HOST: "smtp.acreetionos.org"
+          SMTP_PORT: "587"
+          SMTP_USER: "alerts@acreetionos.org"
+          SMTP_PASS: "${{ secrets.SMTP_PASSWORD }}"
+          MAIL_FROM: "alerts@acreetionos.org"
+          MAIL_TO:   "alerts@acreetionos.org"
+          new_branch: ${{ steps.lts.outputs.latest }}
+          new_tip:    ${{ steps.lts.outputs.tip }}
+          old_branch: ${{ steps.lts.outputs.tracked }}
+        run: |
+          set -eu
+          msg="$(mktemp /tmp/ovmf-reminder.XXXXXX)"
+          {
+            echo "Subject: [ovmf-stable] New EDK II LTS branch: ${new_branch}"
+            echo "From: ${MAIL_FROM}"
+            echo "To: ${MAIL_TO}"
+            echo ""
+            echo "Tianocore published a new EDK II long-term stable branch:"
+            echo ""
+            echo "    new LTS branch:  ${new_branch}"
+            echo "    tip commit:      ${new_tip}"
+            echo "    this mirror is:  stable/${old_branch}"
+            echo ""
+            echo "Go pull it in:"
+            echo ""
+            echo "    cd ~/.ai/.src/ovmf-stable"
+            echo "    git fetch upstream"
+            echo "    git merge --ff-only upstream/${new_branch}"
+            echo "    echo ${new_branch#stable/} > .github/.upstream-lts"
+            echo "    git add .github/.upstream-lts && git commit -m 'Track new LTS: ${new_branch}'"
+            echo "    git push origin main"
+            echo ""
+            echo "  -- ovmf-stable LTS reminder bot"
+          } > "$msg"
+          curl --fail --silent --show-error --ssl-reqd \
+               --url "smtp://${SMTP_HOST}:${SMTP_PORT}" \
+               --mail-from "$MAIL_FROM" \
+               --mail-rcpt "$MAIL_TO" \
+               --user "${SMTP_USER}:${SMTP_PASS}" \
+               --upload-file "$msg"
