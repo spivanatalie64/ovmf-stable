@@ -13,7 +13,7 @@ jobs:
   check-lts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Detect new EDK II long-term stable branch
         id: lts
